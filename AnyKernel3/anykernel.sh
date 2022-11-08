@@ -4,7 +4,7 @@
 ## AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=DFC Kernel by Sairam60
+kernel.string=DFC+ Kernel by Sairam60
 do.devicecheck=1
 do.modules=0
 do.cleanup=1
@@ -14,7 +14,7 @@ device.name2=curtana
 device.name3=excalibur
 device.name4=gram
 device.name5=joyeuse
-supported.versions=11.0-12.0
+supported.versions=11.0-13.0
 '; } # end properties
 
 # shell variables
