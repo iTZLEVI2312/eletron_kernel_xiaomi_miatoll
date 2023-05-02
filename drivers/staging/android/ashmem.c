@@ -32,6 +32,55 @@ struct ashmem_area {
 };
 
 static struct kmem_cache *ashmem_area_cachep __read_mostly;
+static struct kmem_cache *ashmem_range_cachep __read_mostly;
+
+/*
+ * A separate lockdep class for the backing shmem inodes to resolve the lockdep
+ * warning about the race between kswapd taking fs_reclaim before inode_lock
+ * and write syscall taking inode_lock and then fs_reclaim.
+ * Note that such race is impossible because ashmem does not support write
+ * syscalls operating on the backing shmem.
+ */
+static struct lock_class_key backing_shmem_inode_class;
+
+static inline unsigned long range_size(struct ashmem_range *range)
+{
+	return range->pgend - range->pgstart + 1;
+}
+
+static inline bool range_on_lru(struct ashmem_range *range)
+{
+	return range->purged == ASHMEM_NOT_PURGED;
+}
+
+static inline bool page_range_subsumes_range(struct ashmem_range *range,
+					     size_t start, size_t end)
+{
+	return (range->pgstart >= start) && (range->pgend <= end);
+}
+
+static inline bool page_range_subsumed_by_range(struct ashmem_range *range,
+						size_t start, size_t end)
+{
+	return (range->pgstart <= start) && (range->pgend >= end);
+}
+
+static inline bool page_in_range(struct ashmem_range *range, size_t page)
+{
+	return (range->pgstart <= page) && (range->pgend >= page);
+}
+
+static inline bool page_range_in_range(struct ashmem_range *range,
+				       size_t start, size_t end)
+{
+	return page_in_range(range, start) || page_in_range(range, end) ||
+		page_range_subsumes_range(range, start, end);
+}
+
+static inline bool range_before_page(struct ashmem_range *range, size_t page)
+{
+	return range->pgend < page;
+}
 
 #define PROT_MASK		(PROT_EXEC | PROT_READ | PROT_WRITE)
 
@@ -175,6 +224,51 @@ static int ashmem_file_setup(struct ashmem_area *asma, size_t size,
 	 */
 	if (!READ_ONCE(vmfile_fops.mmap)) {
 		spin_lock(&vmfile_fops_lock);
+	
+	/* user needs to SET_SIZE before mapping */
+	if (unlikely(!asma->size)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* requested mapping size larger than object size */
+	if (vma->vm_end - vma->vm_start > PAGE_ALIGN(asma->size)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* requested protection bits must match our allowed protection mask */
+	if (unlikely((vma->vm_flags & ~calc_vm_prot_bits(asma->prot_mask, 0)) &
+		     calc_vm_prot_bits(PROT_MASK, 0))) {
+		ret = -EPERM;
+		goto out;
+	}
+	vma->vm_flags &= ~calc_vm_may_flags(~asma->prot_mask);
+
+	if (!asma->file) {
+		char *name = ASHMEM_NAME_DEF;
+		struct file *vmfile;
+		struct inode *inode;
+
+		if (asma->name[ASHMEM_NAME_PREFIX_LEN] != '\0')
+			name = asma->name;
+
+		/* ... and allocate the backing shmem file */
+		vmfile = shmem_file_setup(name, asma->size, vma->vm_flags);
+		if (IS_ERR(vmfile)) {
+			ret = PTR_ERR(vmfile);
+			goto out;
+		}
+		vmfile->f_mode |= FMODE_LSEEK;
+		inode = file_inode(vmfile);
+		lockdep_set_class(&inode->i_rwsem, &backing_shmem_inode_class);
+		asma->file = vmfile;
+		/*
+		 * override mmap operation of the vmfile so that it can't be
+		 * remapped which would lead to creation of a new vma with no
+		 * asma permission checks. Have to override get_unmapped_area
+		 * as well to prevent VM_BUG_ON check for f_ops modification.
+		 */
 		if (!vmfile_fops.mmap) {
 			vmfile_fops = *vmfile->f_op;
 			vmfile_fops.get_unmapped_area =
