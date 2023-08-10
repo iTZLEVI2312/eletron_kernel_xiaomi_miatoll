@@ -12,7 +12,7 @@ KERNEL_DIR="$(pwd)"
 
 # Custom Kernel 
 CUSTOM_KERNEL=eletron+
-CUSTOM_VERSION=1.0_BETA
+CUSTOM_VERSION=1.0_KSU
 VENDOR=Xiaomi
 DEVICE=MiAtoll
 
@@ -143,6 +143,12 @@ toolchain(){
 
 ##----------------------------------------------------------##
 
+# KernelSU
+ksu(){
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+}
+
+##----------------------------------------------------------##
 # Exports 
 exports(){
 
@@ -329,6 +335,7 @@ completion()
 # Execute
 clean
 toolchain
+ksu
 exports
 compile
 verify
