@@ -12,7 +12,7 @@ KERNEL_DIR="$(pwd)"
 
 # Custom Kernel 
 CUSTOM_KERNEL=eletron+
-CUSTOM_VERSION=1.0_BETA
+CUSTOM_VERSION=1.0_KSU
 VENDOR=Xiaomi
 DEVICE=MiAtoll
 
@@ -118,6 +118,13 @@ toolchain(){
 	git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git  --depth=1 gcc32
 	PATH="${KERNEL_DIR}/aosp-clang/bin:${KERNEL_DIR}/gcc/bin:${KERNEL_DIR}/gcc32/bin:${PATH}"
 	fi
+}
+
+##----------------------------------------------------------##
+
+# KernelSU
+ksu(){
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 }
 
 ##----------------------------------------------------------##
@@ -320,6 +327,7 @@ completion()
 # Execute
 clean
 toolchain
+ksu
 exports
 compile
 verify
